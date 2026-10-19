@@ -1,0 +1,25 @@
+# Production-style local run of the CodeLumen API with a restricted container.
+# Usage: cp backend/.env.example backend/.env  (fill it in)  &&  docker compose up --build
+services:
+  api:
+    build: ./backend
+    env_file: ./backend/.env
+    environment:
+      NODE_ENV: production
+      SANDBOX_MODE: hardened
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
+      TRUST_PROXY: "0"
+    ports:
+      - "8000:8000"
+    # Only the capabilities needed to drop each program to the sandbox user
+    # and clean up its job directory.
+    cap_drop: [ALL]
+    cap_add: [SETUID, SETGID, CHOWN, DAC_OVERRIDE, FOWNER, KILL]
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 512
+    mem_limit: 1g
+    cpus: 2
+    tmpfs:
+      - /sandbox:size=256m,mode=0711
+    restart: unless-stopped

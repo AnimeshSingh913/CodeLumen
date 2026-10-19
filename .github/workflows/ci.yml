@@ -1,0 +1,69 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: Backend tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 17
+      - run: npm ci
+      - run: npm test
+
+  frontend:
+    name: Frontend lint & build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run build
+
+  sandbox:
+    name: Sandbox smoke test (Docker)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Build image
+        run: docker build -t codelumen-backend ./backend
+      - name: Start container
+        run: |
+          docker run -d --name api -p 8000:8000 \
+            -e GROQ_API_KEY=leak-canary-value \
+            --cap-drop ALL --cap-add SETUID --cap-add SETGID --cap-add CHOWN \
+            --cap-add DAC_OVERRIDE --cap-add FOWNER --cap-add KILL \
+            --security-opt no-new-privileges:true --pids-limit 512 \
+            codelumen-backend
+          for i in $(seq 1 30); do curl -fs localhost:8000/health && break; sleep 1; done
+      - name: Verify isolation
+        run: bash scripts/sandbox-smoke.sh http://localhost:8000
+      - name: Container logs
+        if: always()
+        run: docker logs api
